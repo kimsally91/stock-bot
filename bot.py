@@ -1,6 +1,5 @@
 # 1. 필요한 도구 설치 및 불러오기
 
-!pip install -q finance-datareader pandas numpy beautifulsoup4
 
 
 
