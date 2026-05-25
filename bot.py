@@ -1,25 +1,36 @@
-import os, sys, time, requests
+import os
+import sys
+import time
+import requests
 import pandas as pd
 import FinanceDataReader as fdr
+
+from flask import Flask
+from threading import Thread
 
 TOKEN = os.getenv("BOT_TOKEN")
 
 WATCH_LIST = {}
 ALERTED_VOLUME = {}
 CACHE = {}
+
 last_update_id = 0
 last_watch_check = 0
 
 CACHE_SECONDS = 60
-WATCH_CHECK_SECONDS = 60
-ALERT_COOLDOWN = 600  # 10분
+WATCH_CHECK_SECONDS = 300
+ALERT_COOLDOWN = 600
+
+TOP_N = 10
 
 print("① 종목 데이터 로드 중...")
 
 try:
+
     stock_df = fdr.StockListing("KRX")[["Code", "Name"]].copy()
 
     etf_df = fdr.StockListing("ETF/KR")[["Symbol", "Name"]].copy()
+
     etf_df.rename(columns={"Symbol": "Code"}, inplace=True)
 
     stocks = pd.concat([stock_df, etf_df], ignore_index=True)
@@ -33,9 +44,34 @@ try:
     print(f"▶ 총 {len(stocks):,}개 종목 로드 완료")
 
 except Exception as e:
+
     print(f"데이터 로드 실패: {e}")
+
     sys.exit()
 
+
+# =========================
+# Flask (Render용)
+# =========================
+
+app = Flask("")
+
+
+@app.route("/")
+def home():
+    return "Stock Bot Running!"
+
+
+def run():
+    app.run(host="0.0.0.0", port=10000)
+
+
+Thread(target=run).start()
+
+
+# =========================
+# 공통 함수
+# =========================
 
 def send_message(chat_id, text, reply_markup=None):
 
@@ -105,6 +141,7 @@ def clean(text):
 
     t = t.replace("코덱스", "kodex")
     t = t.replace("코덱", "kodex")
+
     t = t.replace("타이거", "tiger")
     t = t.replace("라이즈", "rise")
 
@@ -114,6 +151,10 @@ def clean(text):
 
     return t
 
+
+# =========================
+# 리포트
+# =========================
 
 def generate_report(code, name):
 
@@ -218,6 +259,10 @@ def generate_report(code, name):
         return f"❌ [{name}] 분석 에러: {e}"
 
 
+# =========================
+# 단타 감시
+# =========================
+
 def check_volume_spike(code, name):
 
     try:
@@ -283,34 +328,51 @@ def check_volume_spike(code, name):
 
     except Exception as e:
 
-        print(f"거래량 감시 에러: {name} / {e}")
+        print(f"감시 에러: {name} / {e}")
 
         return None
 
 
-from flask import Flask
-from threading import Thread
+# =========================
+# 거래대금 TOP10 추출
+# =========================
 
-app = Flask('')
+def get_top10_stocks():
+
+    try:
+
+        krx = fdr.StockListing("KRX")
+
+        krx = krx[["Code", "Name", "Marcap"]]
+
+        krx = krx.sort_values(
+            by="Marcap",
+            ascending=False
+        )
+
+        return krx.head(TOP_N)
+
+    except Exception as e:
+
+        print(f"TOP10 추출 실패: {e}")
+
+        return pd.DataFrame()
 
 
-@app.route('/')
-def home():
-    return "Stock Bot Running!"
+print("② TOP10 단타 감시 봇 시작!")
 
 
-def run():
-    app.run(host='0.0.0.0', port=10000)
-
-
-Thread(target=run).start()
-
-print("② 빠른 버전 주식 비서 봇 시작!")
-
+# =========================
+# 메인 루프
+# =========================
 
 while True:
 
     try:
+
+        # =====================
+        # 텔레그램 처리
+        # =====================
 
         url = (
             f"https://api.telegram.org/bot{TOKEN}/getUpdates"
@@ -329,6 +391,7 @@ while True:
                 callback = update["callback_query"]
 
                 chat_id = callback["message"]["chat"]["id"]
+
                 data = callback["data"]
 
                 requests.post(
@@ -336,7 +399,7 @@ while True:
                     json={"callback_query_id": callback["id"]},
                 )
 
-                # 알림 토글
+                # 알림 등록
                 if data.startswith("ALERT_TOGGLE:"):
 
                     _, code, name = data.split(":")
@@ -388,13 +451,15 @@ while True:
                         "inline_keyboard": [[
                             {
                                 "text": btn,
-                                "callback_data": f"ALERT_TOGGLE:{code}:{name}"
+                                "callback_data": (
+                                    f"ALERT_TOGGLE:{code}:{name}"
+                                )
                             }
                         ]]
                     }
                 )
 
-            # 일반 채팅 검색
+            # 종목 검색
             elif (
                 "message" in update
                 and "text" in update["message"]
@@ -403,6 +468,24 @@ while True:
                 chat_id = update["message"]["chat"]["id"]
 
                 text = update["message"]["text"].strip()
+
+                # TOP10 보기
+                if text == "탑10":
+
+                    top10 = get_top10_stocks()
+
+                    msg = "🔥 *현재 거래대금 TOP10*\n\n"
+
+                    for idx, row in top10.iterrows():
+
+                        msg += (
+                            f"{len(msg)}. "
+                            f"{row['Name']}\n"
+                        )
+
+                    send_message(chat_id, msg)
+
+                    continue
 
                 search_text = clean(text)
 
@@ -424,6 +507,7 @@ while True:
                 elif len(match) == 1:
 
                     code = match.iloc[0]["Code"]
+
                     name = match.iloc[0]["Name"]
 
                     msg = generate_report(code, name)
@@ -446,7 +530,9 @@ while True:
                             "inline_keyboard": [[
                                 {
                                     "text": btn,
-                                    "callback_data": f"ALERT_TOGGLE:{code}:{name}"
+                                    "callback_data": (
+                                        f"ALERT_TOGGLE:{code}:{name}"
+                                    )
                                 }
                             ]]
                         }
@@ -475,13 +561,17 @@ while True:
                         {"inline_keyboard": keyboard},
                     )
 
+        # =====================
         # 감시 루프
+        # =====================
+
         now = time.time()
 
         if now - last_watch_check >= WATCH_CHECK_SECONDS:
 
             last_watch_check = now
 
+            # 관심종목 감시
             for chat_id, items in WATCH_LIST.items():
 
                 for code, info in items.items():
@@ -496,7 +586,10 @@ while True:
 
                         last_alert = ALERTED_VOLUME[key]
 
-                        if now_time - last_alert < ALERT_COOLDOWN:
+                        if (
+                            now_time - last_alert
+                            < ALERT_COOLDOWN
+                        ):
                             continue
 
                     msg = check_volume_spike(code, name)
