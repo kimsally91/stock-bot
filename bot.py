@@ -289,8 +289,14 @@ while True:
         if now - last_watch_check >= WATCH_CHECK_SECONDS:
             last_watch_check = now
 
-                        for chat_id, items in WATCH_LIST.items():
+                                now = time.time()
+
+        if now - last_watch_check >= WATCH_CHECK_SECONDS:
+            last_watch_check = now
+
+            for chat_id, items in WATCH_LIST.items():
                 for code, info in items.items():
+
                     name = info["name"]
                     key = f"{chat_id}_{code}"
 
@@ -312,4 +318,3 @@ while True:
         print(f"루프 에러: {e}")
 
     time.sleep(2)
-
