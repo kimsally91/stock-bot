@@ -1,0 +1,6 @@
+requests
+pandas
+numpy
+finance-datareader
+python-telegram-bot
+beautifulsoup4
