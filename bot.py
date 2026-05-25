@@ -289,18 +289,18 @@ while True:
         if now - last_watch_check >= WATCH_CHECK_SECONDS:
             last_watch_check = now
 
-            for chat_id, items in WATCH_LIST.items():
+                        for chat_id, items in WATCH_LIST.items():
                 for code, info in items.items():
                     name = info["name"]
                     key = f"{chat_id}_{code}"
 
-now_time = time.time()
+                    now_time = time.time()
 
-if key in ALERTED_VOLUME:
-    last_alert = ALERTED_VOLUME[key]
+                    if key in ALERTED_VOLUME:
+                        last_alert = ALERTED_VOLUME[key]
 
-    if now_time - last_alert < ALERT_COOLDOWN:
-        continue
+                        if now_time - last_alert < ALERT_COOLDOWN:
+                            continue
 
                     msg = check_volume_spike(code, name)
 
@@ -312,5 +312,4 @@ if key in ALERTED_VOLUME:
         print(f"루프 에러: {e}")
 
     time.sleep(2)
-
 
