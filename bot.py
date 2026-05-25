@@ -5,7 +5,7 @@ import FinanceDataReader as fdr
 TOKEN = os.getenv("BOT_TOKEN")
 
 WATCH_LIST = {}
-ALERTED_VOLUME = {}
+ALERT_COOLDOWN = 600
 CACHE = {}
 last_update_id = 0
 last_watch_check = 0
@@ -164,7 +164,7 @@ def check_volume_spike(code, name):
         volume = int(latest["Volume"])
         volume_mult = volume / (latest["VMA20"] if latest["VMA20"] > 0 else 1)
 
-        if volume_mult >= 3 and rate >= 2:
+        if volume_mult >= 2 and rate >= 1.5:
             return f"""
 🚨 *거래량 급증 포착*
 
@@ -292,17 +292,21 @@ while True:
             for chat_id, items in WATCH_LIST.items():
                 for code, info in items.items():
                     name = info["name"]
-                    today = str(pd.Timestamp.today().date())
-                    key = f"{chat_id}_{code}_{today}"
+                    key = f"{chat_id}_{code}"
 
-                    if key in ALERTED_VOLUME:
-                        continue
+now_time = time.time()
+
+if key in ALERTED_VOLUME:
+    last_alert = ALERTED_VOLUME[key]
+
+    if now_time - last_alert < ALERT_COOLDOWN:
+        continue
 
                     msg = check_volume_spike(code, name)
 
                     if msg:
                         send_message(chat_id, msg)
-                        ALERTED_VOLUME[key] = True
+                        ALERTED_VOLUME[key] = time.time()
 
     except Exception as e:
         print(f"루프 에러: {e}")
